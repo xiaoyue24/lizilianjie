@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Birthday</title>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <style>
+        body { margin: 0; overflow: hidden; background: #0a050a; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; cursor: move; touch-action: none; -webkit-tap-highlight-color: transparent; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        
+        #ui-layer {
+            position: absolute; top: calc(15px + env(safe-area-inset-top)); left: 20px; color: #ffb6c1;
+            pointer-events: none; text-shadow: 0 0 10px rgba(255,182,193,0.5);
+            z-index: 10; max-width: 80vw;
+        }
+
+        .top-controls {
+            position: absolute; top: calc(15px + env(safe-area-inset-top)); right: 20px;
+            display: flex; gap: 10px; z-index: 100;
+        }
+        .icon-btn {
+            width: 38px; height: 38px; border-radius: 50%;
+            background: rgba(255, 182, 193, 0.12);
+            border: 1px solid rgba(255, 182, 193, 0.3);
+            display: flex; justify-content: center; align-items: center;
+            cursor: pointer; transition: all 0.3s; backdrop-filter: blur(4px);
+        }
+        .icon-btn:active { transform: scale(0.9); background: rgba(255, 182, 193, 0.25); }
+        #music-toggle.playing { animation: rotate 4s linear infinite; }
+        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        
+        #settings-panel {
+            position: absolute; top: 70px; right: 20px;
+            background: rgba(10, 5, 10, 0.95);
+            border: 1px solid rgba(255, 182, 193, 0.5); border-radius: 12px;
+            padding: 16px; width: 220px; display: none;
+            backdrop-filter: blur(10px); z-index: 105;
+            color: #ffb6c1; font-size: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .setting-item { margin-bottom: 12px; }
+        .setting-label { font-weight: bold; margin-bottom: 6px; display: block; opacity: 0.9; }
+        .setting-input { 
+            width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,182,193,0.3);
+            border-radius: 6px; color: #fff; padding: 6px; font-size: 10px; box-sizing: border-box;
+        }
+        .file-label {
+            display: block; width: 100%; text-align: center; padding: 8px;
+            background: rgba(255, 182, 193, 0.1); border: 1px dashed rgba(255, 182, 193, 0.5);
+            border-radius: 6px; cursor: pointer; transition: 0.3s; box-sizing: border-box;
+        }
+        .file-label:hover { background: rgba(255, 182, 193, 0.2); }
+
+        .bottom-btn {
+            position: absolute; 
+            bottom: calc(6% + env(safe-area-inset-bottom));
+            left: 50%; transform: translateX(-50%);
+            color: #fff; font-size: 18px; font-weight: bold;
+            text-shadow: 0 0 10px rgba(255, 105, 180, 0.5);
+            opacity: 0; transition: opacity 0.8s ease, transform 0.3s ease;
+            z-index: 15; pointer-events: none;
+            letter-spacing: 2px; cursor: pointer;
+            border: 1.2px solid rgba(255, 105, 180, 0.5);
+            padding: 12px 28px; border-radius: 40px;
+            background: linear-gradient(180deg, rgba(255, 105, 180, 0.15), rgba(255, 182, 193, 0.05));
+            backdrop-filter: blur(6px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+            white-space: nowrap;
+        }
+
+        .bottom-btn.active { 
+            pointer-events: auto; 
+            opacity: 1; 
+            animation: breathe 2.5s infinite ease-in-out;
+        }
+
+        @keyframes breathe {
+            0% { box-shadow: 0 0 8px rgba(255, 105, 180, 0.2); border-color: rgba(255, 105, 180, 0.4); }
+            50% { box-shadow: 0 0 20px rgba(255, 105, 180, 0.6); border-color: rgba(255, 105, 180, 0.8); }
+            100% { box-shadow: 0 0 8px rgba(255, 105, 180, 0.2); border-color: rgba(255, 105, 180, 0.4); }
+        }
+        
+        #start-overlay {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            background: #0a050a; z-index: 110; transition: opacity 0.8s ease;
+        }
+        .start-ui-box { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #start-button {
+            padding: 16px 48px; font-size: 19px; color: #fff;
+            background: linear-gradient(45deg, #ff69b4, #ffb6c1);
+            border: none; border-radius: 35px; cursor: pointer;
+            box-shadow: 0 0 25px rgba(255, 105, 180, 0.6);
+            font-weight: bold; transition: transform 0.2s;
+        }
+        #start-button:active { transform: scale(0.92); }
+    </style>
+</head>
+<body>
+    <audio id="bgm" loop preload="auto" playsinline webkit-playsinline></audio>
+
+    <div class="top-controls">
+        <div id="music-settings-btn" class="icon-btn">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#ffb6c1" stroke-width="2"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        </div>
+        <div id="music-toggle" class="icon-btn">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#ffb6c1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+        </div>
+    </div>
+
+    <div id="settings-panel">
+        <div id="music-status">音频就绪 ✨</div>
+        <hr style="border: none; border-top: 1px solid rgba(255,182,193,0.2); margin: 10px 0;">
+        <div class="setting-item">
+            <span class="setting-label">✨ 自定义星座图片：</span>
+            <input type="text" id="img-url-input" class="setting-input" placeholder="输入图片直链 (PNG最佳)">
+        </div>
+        <div class="setting-item">
+            <label class="file-label" for="img-file-input">📤 上传透明图片</label>
+            <input type="file" id="img-file-input" style="display:none;" accept="image/*">
+        </div>
+        <div style="opacity: 0.6; font-size: 9px; line-height: 1.4; margin-top: 8px;">
+            * 设置后，金牛座将被图片替代<br>
+            * 建议使用透明背景的 PNG
+        </div>
+    </div>
+
+    <div id="start-overlay">
+        <div class="start-ui-box">
+            <div style="color: #ffb6c1; font-size: 24px; margin-bottom: 30px; text-shadow: 0 0 12px #ff69b4; font-weight: bold; letter-spacing: 2px;">请打开你的礼物 ✦</div>
+            <button id="start-button">开启礼物</button>
+        </div>
+    </div>
+
+    <div id="ui-layer">
+        <div id="status" style="font-size: 16px; font-weight: bold;">请打开你的礼物 ✦</div>
+        <div id="instruction-content" style="margin-top: 8px; font-size: 12px; line-height: 1.5; border-left: 2px solid #ffb6c1; padding-left: 10px; opacity: 0.7;">
+            <div>✨ 专属 3D 粒子场景</div>
+            <div style="font-size: 10px; margin-top: 5px; opacity: 0.6;">滑动可旋转观察</div>
+        </div>
+    </div>
+
+    <div id="ignite-text" class="bottom-btn">点燃蜡烛 ✦</div>
+    <div id="wish-btn" class="bottom-btn">许个愿吧 ✦</div>
+    <div id="zodiac-btn" class="bottom-btn">守护星座 ✦</div>
+    
+    <div id="canvas-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.152.0/build/three.min.js"></script>
+
+    <script>
+        window.onload = function() {
+            if (typeof THREE === 'undefined') return;
+
+            // ==========================================
+            // 🎵 全局配置中心
+            // ==========================================
+            const CONFIG = {
+                musicUrl: "https://cdn.jsdelivr.net/gh/xiaoyue24/3music@main/birthday.mp3",
+                fallbackUrl: "https://web-001.sc94.net/yinxiao/shishang/HappyBirthday.mp3",
+                wishMusicUrl: "", 
+
+                totalParticles: 20000,
+                textParticles: 15000, 
+                colors: { primary: 0xffb6c1, layer1: 0xffe4e1, layer2: 0xff69b4, flame: 0xffa500, bg: 0x0a050a },
+                stages: ['3', '2', '1', '小小晴，生日快乐', 'CAKE', 'IDLE', 'ENVELOPE', 'ZODIAC'],
+                countdownInterval: 2000,
+                textInterval: 3500,
+                // 修改后的文案排版
+                blessingLines: [
+                    "生日快乐",
+                    "愿你新的一岁",
+                    "像喜欢的风景一样 安静、自洽、明亮",
+                    "有自己的节奏，也有被温柔照拂的运气"
+                ]
+            };
+
+            const bgm = document.getElementById('bgm');
+            const musicBtn = document.getElementById('music-toggle');
+            const statusLabel = document.getElementById('music-status');
+            const igniteBtn = document.getElementById('ignite-text');
+            const wishBtn = document.getElementById('wish-btn');
+            const zodiacBtn = document.getElementById('zodiac-btn');
+            
+            function fixMusicUrl(url) {
+                if (!url) return "";
+                let fixed = url.trim();
+                if (fixed.includes('github.com') && (fixed.includes('/blob/') || fixed.includes('/tree/'))) {
+                    fixed = fixed.replace('github.com', 'raw.githubusercontent.com').replace(/\/blob\/|\/tree\//, '/');
+                }
+                return fixed;
+            }
+
+            let playPromise = null;
+            async function playGlobalMusic(url, isWish = false) {
+                const finalUrl = fixMusicUrl(url);
+                if (!finalUrl) return;
+                statusLabel.innerText = "正在准备音频...";
+                bgm.volume = 1.0;
+                const absoluteUrl = new URL(finalUrl, window.location.href).href;
+                if (bgm.src === absoluteUrl && !bgm.paused) return;
+                if (bgm.src !== absoluteUrl) {
+                    bgm.pause();
+                    bgm.src = finalUrl;
+                }
+                try {
+                    playPromise = bgm.play();
+                    await playPromise;
+                    musicBtn.classList.add('playing');
+                    statusLabel.innerText = isWish ? "播放许愿音乐 💫" : "音乐播放中 🎵";
+                } catch (err) {
+                    if (err.name === 'AbortError') {
+                        console.log("音频播放被正常中断");
+                    } else {
+                        console.error("播放失败:", err);
+                        statusLabel.innerText = "播放失败，正在切换备用音源...";
+                        if (!isWish && url === CONFIG.musicUrl) {
+                            setTimeout(() => playGlobalMusic(CONFIG.fallbackUrl), 500);
+                        }
+                    }
+                }
+            }
+
+            // ==========================================
+            // 粒子模型生成中心
+            // ==========================================
+            let scene, camera, renderer, particles;
+            let currentStage = 5; 
+            let targetPositions = [], targetColors = []; 
+            let isDragging = false, previousPointer = { x: 0, y: 0 }, rotationTarget = { x: 0, y: 0 }; 
+            let flameLit = false, isCakeStage = false;
+
+            const PointGenerator = {
+                extractPointsFromCanvas(drawFunc, width = 1200, height = 1200, scale = 30) {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width; canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    drawFunc(ctx, width, height);
+                    const imageData = ctx.getImageData(0, 0, width, height).data;
+                    const points = [], colors = [], colorBase = new THREE.Color(CONFIG.colors.primary);
+                    for (let i = 0; i < imageData.length; i += 4 * 4) {
+                        const alpha = imageData[i + 3];
+                        if (alpha > 128) {
+                            const x = (i / 4) % width, y = Math.floor((i / 4) / width);
+                            points.push(new THREE.Vector3((x - width/2) / scale, -(y - height/2) / scale, 0));
+                            colors.push(colorBase.r, colorBase.g, colorBase.b);
+                        }
+                    }
+                    return { points, colors };
+                },
+
+                createText(text) {
+                    return this.extractPointsFromCanvas((ctx, w, h) => {
+                        ctx.fillStyle = 'white';
+                        const fontSize = text.length > 5 ? 120 : 240;
+                        ctx.font = `bold ${fontSize}px sans-serif`;
+                        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        ctx.fillText(text, w/2, h/4);
+                    }, 1024, 512, 30);
+                },
+
+                createCake() {
+                    const points = [], colors = [];
+                    const c1 = new THREE.Color(CONFIG.colors.layer1), c2 = new THREE.Color(CONFIG.colors.layer2), cf = new THREE.Color(CONFIG.colors.flame);  
+                    for(let i=0; i<8000; i++){
+                        const r = Math.sqrt(Math.random()) * 8, theta = Math.random() * Math.PI * 2;
+                        points.push(new THREE.Vector3(r * Math.cos(theta), -6 + Math.random() * 5, r * Math.sin(theta)));
+                        colors.push(c2.r, c2.g, c2.b);
+                    }
+                    for(let i=0; i<5000; i++){
+                        const r = Math.sqrt(Math.random()) * 6, theta = Math.random() * Math.PI * 2;
+                        points.push(new THREE.Vector3(r * Math.cos(theta), -1 + Math.random() * 4, r * Math.sin(theta)));
+                        colors.push(c1.r, c1.g, c1.b);
+                    }
+                    for(let i=0; i<1000; i++){
+                        points.push(new THREE.Vector3((Math.random()-0.5)*0.5, 3 + Math.random() * 3, (Math.random()-0.5)*0.5));
+                        colors.push(1, 1, 1);
+                    }
+                    for(let i=0; i<1000; i++){
+                        const h = Math.random(), r = (1.0 - h) * h * 1.5, theta = Math.random() * Math.PI * 2;
+                        points.push(new THREE.Vector3(r * Math.cos(theta), 6 + h * 2.5, r * Math.sin(theta)));
+                        colors.push(cf.r, cf.g, cf.b);
+                    }
+                    return { points, colors };
+                },
+
+                createEnvelope() {
+                    const points = [], colors = [];
+                    const cLine = new THREE.Color(CONFIG.colors.layer2);
+                    const cFill = new THREE.Color(CONFIG.colors.primary);
+                    const w = 24, h = 16; 
+                    const halfW = w / 2, halfH = h / 2;
+                    const addLine = (p1, p2, density, color) => {
+                        for(let i=0; i<density; i++) {
+                            const t = i / (density - 1); 
+                            points.push(new THREE.Vector3(p1.x + (p2.x - p1.x) * t, p1.y + (p2.y - p1.y) * t, p1.z));
+                            colors.push(color.r, color.g, color.b);
+                        }
+                    };
+                    const d = 2500; 
+                    const pTL = {x: -halfW, y: halfH, z: 0}, pTR = {x: halfW, y: halfH, z: 0};
+                    const pBL = {x: -halfW, y: -halfH, z: 0}, pBR = {x: halfW, y: -halfH, z: 0};
+                    const pCenter = {x: 0, y: 0, z: 0.5}; 
+                    addLine(pTL, pTR, d, cLine); 
+                    addLine(pTR, pBR, d, cLine); 
+                    addLine(pBR, pBL, d, cLine); 
+                    addLine(pBL, pTL, d, cLine);
+                    addLine(pTL, pCenter, d, cLine); 
+                    addLine(pTR, pCenter, d, cLine);
+                    addLine(pBL, pCenter, d, cLine); 
+                    addLine(pBR, pCenter, d, cLine);
+                    for(let i=0; i<5000; i++){
+                        points.push(new THREE.Vector3((Math.random() - 0.5) * w, (Math.random() - 0.5) * h, -0.1));
+                        colors.push(cFill.r * 0.5, cFill.g * 0.5, cFill.b * 0.5);
+                    }
+                    return { points, colors };
+                },
+
+                createTaurus() {
+                    return this.extractPointsFromCanvas((ctx, w, h) => {
+                        ctx.strokeStyle = 'white';
+                        ctx.lineWidth = 22;
+                        ctx.lineCap = 'round';
+                        
+                        const cx = w/2;
+                        const cy = h/2 - 380; 
+                        
+                        ctx.beginPath();
+                        ctx.arc(cx, cy + 100, 115, 0, Math.PI * 2); 
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(cx - 170, cy - 80);
+                        ctx.quadraticCurveTo(cx, cy + 85, cx + 170, cy - 80); 
+                        ctx.stroke();
+                        
+                        ctx.fillStyle = 'white';
+                        ctx.textAlign = 'center';
+                        
+                        // 使用小一点的字体比例
+                        ctx.font = 'bold 64px sans-serif';
+                        ctx.fillText(CONFIG.blessingLines[0], cx, cy + 380);
+                        
+                        ctx.font = 'bold 34px sans-serif';
+                        ctx.fillText(CONFIG.blessingLines[1], cx, cy + 470);
+                        ctx.fillText(CONFIG.blessingLines[2], cx, cy + 530);
+                        ctx.fillText(CONFIG.blessingLines[3], cx, cy + 590);
+                        
+                    }, 1200, 1200, 25);
+                },
+
+                createFromImage(img) {
+                    return this.extractPointsFromCanvas((ctx, w, h) => {
+                        const aspect = img.width / img.height;
+                        let dw = w * 0.8, dh = dw / aspect;
+                        if(dh > h * 0.45) { dh = h * 0.45; dw = dh * aspect; }
+                        
+                        const topPadding = 80;
+                        ctx.drawImage(img, (w - dw)/2, topPadding, dw, dh);
+                        
+                        const cx = w/2;
+                        const textStart = topPadding + dh + 100;
+                        
+                        ctx.fillStyle = 'white';
+                        ctx.textAlign = 'center';
+                        
+                        ctx.font = 'bold 64px sans-serif';
+                        ctx.fillText(CONFIG.blessingLines[0], cx, textStart);
+                        
+                        ctx.font = 'bold 34px sans-serif';
+                        ctx.fillText(CONFIG.blessingLines[1], cx, textStart + 90);
+                        ctx.fillText(CONFIG.blessingLines[2], cx, textStart + 150);
+                        ctx.fillText(CONFIG.blessingLines[3], cx, textStart + 210);
+                    }, 1200, 1200, 30);
+                }
+            };
+
+            function init() {
+                scene = new THREE.Scene();
+                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                camera.position.set(0, 5, 35);
+                renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setClearColor(CONFIG.colors.bg);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+                for(let i=0; i<CONFIG.stages.length; i++) {
+                    let data;
+                    const stage = CONFIG.stages[i];
+                    if (stage === 'CAKE') data = PointGenerator.createCake();
+                    else if (stage === 'ENVELOPE') data = PointGenerator.createEnvelope();
+                    else if (stage === 'ZODIAC') data = PointGenerator.createTaurus();
+                    else if (stage === 'IDLE') data = { points: [], colors: [] };
+                    else data = PointGenerator.createText(stage);
+                    targetPositions.push(data.points); targetColors.push(data.colors);
+                }
+
+                const geo = new THREE.BufferGeometry();
+                const pos = new Float32Array(CONFIG.totalParticles * 3), cols = new Float32Array(CONFIG.totalParticles * 3);
+                const baseColor = new THREE.Color(CONFIG.colors.primary);
+                for(let i=0; i < CONFIG.totalParticles; i++) {
+                    pos[i*3] = (Math.random() - 0.5) * 100; pos[i*3+1] = (Math.random() - 0.5) * 100; pos[i*3+2] = (Math.random() - 0.5) * 100;
+                    cols[i*3] = baseColor.r; cols[i*3+1] = baseColor.g; cols[i*3+2] = baseColor.b;
+                }
+                geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+                geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+                particles = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.15, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, opacity: 0.8, depthWrite: false }));
+                scene.add(particles);
+
+                setupControls();
+                setupUploader();
+                animate();
+            }
+
+            function setupUploader() {
+                const urlInput = document.getElementById('img-url-input');
+                const fileInput = document.getElementById('img-file-input');
+                const processImg = (img) => {
+                    img.crossOrigin = "anonymous";
+                    img.onload = () => {
+                        const data = PointGenerator.createFromImage(img);
+                        targetPositions[7] = data.points;
+                        targetColors[7] = data.colors;
+                        if(currentStage === 7) updateStatus();
+                    };
+                };
+                urlInput.addEventListener('change', () => {
+                    if(!urlInput.value) return;
+                    const img = new Image();
+                    img.src = urlInput.value;
+                    processImg(img);
+                });
+                fileInput.addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if(!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        const img = new Image();
+                        img.src = ev.target.result;
+                        processImg(img);
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            function startAutoPlaySequence() {
+                const sequence = [{ id: 0, delay: CONFIG.countdownInterval }, { id: 1, delay: CONFIG.countdownInterval }, { id: 2, delay: CONFIG.countdownInterval }, { id: 3, delay: CONFIG.textInterval }, { id: 4, delay: null }];
+                let step = 0;
+                function runStep() {
+                    const item = sequence[step];
+                    currentStage = item.id;
+                    isCakeStage = (CONFIG.stages[currentStage] === 'CAKE');
+                    updateStatus();
+                    rotationTarget.x = 0; rotationTarget.y = 0;
+                    if (isCakeStage) {
+                        flameLit = false;
+                        setTimeout(() => igniteBtn.classList.add('active'), 1500);
+                    }
+                    if (item.delay !== null) setTimeout(() => { step++; runStep(); }, item.delay);
+                }
+                runStep();
+            }
+
+            function updateStatus() {
+                const statusEl = document.getElementById('status');
+                const stageName = CONFIG.stages[currentStage];
+                if(stageName === 'CAKE') statusEl.innerText = '🎂 生日蛋糕 ✦';
+                else if(stageName === 'ENVELOPE') statusEl.innerText = '✉️ 愿望已封存 ✦';
+                else if(stageName === 'ZODIAC') statusEl.innerText = '♉ 星星的祝福 ✦';
+                else if(stageName === 'IDLE') statusEl.innerText = '✨ 魔法流沙 ✦';
+                else statusEl.innerText = `✨ ${stageName} ✦`;
+            }
+
+            function setupControls() {
+                const down = (x, y) => { isDragging = true; previousPointer.x = x; previousPointer.y = y; };
+                const move = (x, y) => { if (!isDragging) return; rotationTarget.y += (x - previousPointer.x) * 0.01; rotationTarget.x += (y - previousPointer.y) * 0.01; previousPointer.x = x; previousPointer.y = y; };
+                window.addEventListener('mousedown', e => down(e.clientX, e.clientY));
+                window.addEventListener('mousemove', e => move(e.clientX, e.clientY));
+                window.addEventListener('mouseup', () => isDragging = false);
+                window.addEventListener('touchstart', e => { if(e.touches.length > 0) down(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+                window.addEventListener('touchmove', e => { if (isDragging && e.touches.length > 0) { move(e.touches[0].clientX, e.touches[0].clientY); if(e.cancelable) e.preventDefault(); } }, { passive: false });
+                window.addEventListener('touchend', () => isDragging = false);
+            }
+
+            function animate() {
+                requestAnimationFrame(animate);
+                const time = performance.now() * 0.001;
+                if(particles) {
+                    particles.rotation.y += (rotationTarget.y - particles.rotation.y) * 0.1;
+                    particles.rotation.x += (rotationTarget.x - particles.rotation.x) * 0.1;
+                    const posAttr = particles.geometry.attributes.position, colAttr = particles.geometry.attributes.color;
+                    const p = posAttr.array, c = colAttr.array;
+                    const stageName = CONFIG.stages[currentStage];
+                    const isIdle = stageName === 'IDLE';
+                    const curPoints = targetPositions[currentStage];
+                    const curCols = targetColors[currentStage];
+
+                    for (let i = 0; i < CONFIG.totalParticles; i++) {
+                        const i3 = i * 3;
+                        if (i < CONFIG.textParticles && !isIdle && curPoints && curPoints.length > 0) {
+                            const targetIdx = i % curPoints.length;
+                            const targetP = curPoints[targetIdx];
+                            let finalY = targetP.y, alpha = 1.0;
+                            if (stageName === 'CAKE' && targetIdx >= 14000) {
+                                if (!flameLit) { finalY = 6.0; alpha = 0.0; }
+                                else { finalY += Math.sin(time * 15 + i) * 0.3 + Math.random() * 0.1; }
+                            }
+                            p[i3] += (targetP.x - p[i3]) * 0.08; 
+                            p[i3+1] += (finalY - p[i3+1]) * 0.08; 
+                            p[i3+2] += (targetP.z - p[i3+2]) * 0.08;
+                            c[i3] += (curCols[targetIdx*3] * alpha - c[i3]) * 0.06; 
+                            c[i3+1] += (curCols[targetIdx*3+1] * alpha - c[i3+1]) * 0.06; 
+                            c[i3+2] += (curCols[targetIdx*3+2] * alpha - c[i3+2]) * 0.06;
+                        } else {
+                            p[i3] += Math.sin(time * 0.3 + i) * (isIdle ? 0.025 : 0.012); 
+                            p[i3+1] += Math.cos(time * 0.5 + i) * (isIdle ? 0.025 : 0.012);
+                            c[i3] += (new THREE.Color(CONFIG.colors.primary).r * (isIdle ? 0.6 : 0.35) - c[i3]) * 0.02;
+                        }
+                    }
+                    posAttr.needsUpdate = true; colAttr.needsUpdate = true;
+                }
+                if(renderer) renderer.render(scene, camera);
+            }
+
+            document.getElementById('music-settings-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const panel = document.getElementById('settings-panel');
+                panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+            });
+            
+            musicBtn.addEventListener('click', (e) => { 
+                e.stopPropagation();
+                if (bgm.paused) {
+                    playGlobalMusic(bgm.src || CONFIG.musicUrl);
+                } else {
+                    bgm.pause();
+                    musicBtn.classList.remove('playing');
+                    statusLabel.innerText = "已暂停播放 ⏸️";
+                }
+            });
+            
+            document.getElementById('start-button').addEventListener('click', function(e) {
+                e.stopPropagation();
+                playGlobalMusic(CONFIG.musicUrl);
+                document.getElementById('start-overlay').style.opacity = '0';
+                setTimeout(() => { 
+                    document.getElementById('start-overlay').style.display = 'none'; 
+                    startAutoPlaySequence(); 
+                }, 800);
+            });
+
+            igniteBtn.addEventListener('click', (e) => { 
+                e.stopPropagation();
+                igniteBtn.classList.remove('active'); 
+                flameLit = true; 
+                setTimeout(() => wishBtn.classList.add('active'), 1000);
+            });
+
+            wishBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                wishBtn.classList.remove('active');
+                if (CONFIG.wishMusicUrl && CONFIG.wishMusicUrl.trim() !== "") {
+                    playGlobalMusic(CONFIG.wishMusicUrl, true);
+                }
+                currentStage = 6;
+                updateStatus();
+                rotationTarget.x = 0; rotationTarget.y = 0;
+                setTimeout(() => zodiacBtn.classList.add('active'), 2500);
+            });
+
+            zodiacBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                zodiacBtn.classList.remove('active');
+                currentStage = 7;
+                updateStatus();
+                rotationTarget.x = 0; rotationTarget.y = 0;
+            });
+
+            window.addEventListener('resize', () => { 
+                if(camera) { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); }
+                if(renderer) renderer.setSize(window.innerWidth, window.innerHeight); 
+            });
+
+            init();
+        };
+    </script>
+</body>
+</html>
